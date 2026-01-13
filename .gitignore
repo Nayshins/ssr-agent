@@ -1,0 +1,9 @@
+node_modules/
+dist/
+runs/
+baselines/
+scripts/ralph/
+.claude/
+*.log
+.DS_Store
+.env

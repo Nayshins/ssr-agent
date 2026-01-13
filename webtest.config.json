@@ -1,0 +1,55 @@
+{
+  "baseUrl": "https://example.com",
+  "allowedHosts": [
+    "example.com"
+  ],
+  "scenarios": [
+    {
+      "id": "login-flow",
+      "name": "User Login",
+      "goal": "Log in with valid credentials",
+      "successCriteria": "User sees dashboard after login"
+    }
+  ],
+  "personas": [
+    {
+      "id": "casual-user",
+      "name": "Casual User",
+      "traits": [
+        "impatient",
+        "not tech-savvy",
+        "easily frustrated"
+      ],
+      "demographics": {
+        "age": 35,
+        "techExperience": "low"
+      }
+    }
+  ],
+  "evaluationQuestions": [
+    {
+      "id": "ease",
+      "question": "How easy was it to complete the task?"
+    },
+    {
+      "id": "trust",
+      "question": "How trustworthy did this site feel?"
+    }
+  ],
+  "anchors": {
+    "ease": {
+      "1": "Extremely difficult, could not complete",
+      "2": "Difficult, required significant effort",
+      "3": "Moderately easy, some friction",
+      "4": "Easy, minor issues",
+      "5": "Very easy, effortless"
+    },
+    "trust": {
+      "1": "Not trustworthy at all, suspicious",
+      "2": "Somewhat untrustworthy",
+      "3": "Neutral, neither trust nor distrust",
+      "4": "Somewhat trustworthy",
+      "5": "Very trustworthy, would share sensitive info"
+    }
+  }
+}
