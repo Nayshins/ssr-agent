@@ -758,4 +758,184 @@ program
     });
   });
 
+interface ExplainOptions {
+  run?: string;
+  latest: boolean;
+  screenshots: boolean;
+  question?: string;
+}
+
+async function explainRun(options: ExplainOptions): Promise<void> {
+  let runId: string | null = null;
+
+  if (options.latest) {
+    runId = findLatestRun();
+    if (!runId) {
+      console.error("No runs found");
+      process.exit(1);
+    }
+  } else if (options.run) {
+    runId = options.run;
+  } else {
+    console.error("Please specify --latest or --run <id>");
+    process.exit(1);
+  }
+
+  const runDir = join(process.cwd(), "runs", runId);
+
+  if (!existsSync(runDir)) {
+    console.error(`Run '${runId}' not found at ${runDir}`);
+    process.exit(1);
+  }
+
+  const runResultPath = join(runDir, "run-result.json");
+  const stepLogPath = join(runDir, "step-log.json");
+  const ssrScoresPath = join(runDir, "ssr-scores.json");
+  const consoleErrorsPath = join(runDir, "console-errors.json");
+  const networkErrorsPath = join(runDir, "network-errors.json");
+
+  if (!existsSync(runResultPath)) {
+    console.error(`No run-result.json found in ${runDir}`);
+    process.exit(1);
+  }
+
+  const runResult = JSON.parse(readFileSync(runResultPath, "utf-8")) as RunResult;
+  const stepLog = existsSync(stepLogPath)
+    ? JSON.parse(readFileSync(stepLogPath, "utf-8"))
+    : [];
+  const ssrScores = existsSync(ssrScoresPath)
+    ? JSON.parse(readFileSync(ssrScoresPath, "utf-8"))
+    : null;
+  const consoleErrors = existsSync(consoleErrorsPath)
+    ? JSON.parse(readFileSync(consoleErrorsPath, "utf-8"))
+    : [];
+  const networkErrors = existsSync(networkErrorsPath)
+    ? JSON.parse(readFileSync(networkErrorsPath, "utf-8"))
+    : [];
+
+  const contentParts: Anthropic.MessageParam["content"] = [];
+
+  const contextText = `# Run Analysis Request
+
+## Run Information
+- **Run ID:** ${runId}
+- **Scenario:** ${runResult.task.scenarioName} (${runResult.task.scenarioId})
+- **Goal:** ${runResult.task.goal}
+- **Success Criteria:** ${runResult.task.successCriteria}
+- **Persona:** ${runResult.persona.name} (traits: ${runResult.persona.traits.join(", ")})
+- **Result:** ${runResult.success ? "SUCCESS" : "FAILED"}
+- **Duration:** ${(runResult.timing.durationMs / 1000).toFixed(1)}s
+
+## Step Log (${stepLog.length} steps)
+${JSON.stringify(stepLog, null, 2)}
+
+## Risk Flags
+${runResult.riskFlags.length > 0 ? runResult.riskFlags.map((f: string) => `- ${f}`).join("\n") : "None"}
+
+## Console Errors (${consoleErrors.length})
+${consoleErrors.length > 0 ? JSON.stringify(consoleErrors, null, 2) : "None"}
+
+## Network Errors (${networkErrors.length})
+${networkErrors.length > 0 ? JSON.stringify(networkErrors, null, 2) : "None"}
+
+## Qualitative Feedback
+${runResult.qualitativeFeedback || "None provided"}
+
+## Free-Text Answers
+${Object.entries(runResult.freeTextAnswers || {})
+  .map(([q, a]) => `**${q}:** ${a}`)
+  .join("\n\n") || "None"}
+
+${ssrScores ? `## SSR Scores
+${Object.entries(ssrScores.scores)
+  .map(([q, data]: [string, unknown]) => {
+    const scoreData = data as { expectedScore: number; entropy: number };
+    return `- **${q}:** ${scoreData.expectedScore.toFixed(2)}/5.00 (entropy: ${scoreData.entropy.toFixed(2)})`;
+  })
+  .join("\n")}
+- **Average:** ${ssrScores.summary.averageExpectedScore.toFixed(2)}/5.00` : ""}`;
+
+  contentParts.push({ type: "text", text: contextText });
+
+  if (options.screenshots) {
+    const screenshotFiles = ["screenshot-initial.png", "screenshot-final.png", "screenshot-error.png"];
+    for (const filename of screenshotFiles) {
+      const screenshotPath = join(runDir, filename);
+      if (existsSync(screenshotPath)) {
+        const imageData = readFileSync(screenshotPath);
+        const base64 = imageData.toString("base64");
+        contentParts.push({
+          type: "text",
+          text: `\n## Screenshot: ${filename}\n`,
+        });
+        contentParts.push({
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: "image/png",
+            data: base64,
+          },
+        });
+      }
+    }
+  }
+
+  const userQuestion = options.question || (runResult.success
+    ? "This run succeeded. Please analyze what went well and identify any potential UX issues or areas for improvement that the persona might have experienced."
+    : "This run failed. Please explain why it failed, what went wrong, and suggest specific improvements to fix the issues.");
+
+  contentParts.push({
+    type: "text",
+    text: `\n---\n\n**Question:** ${userQuestion}`,
+  });
+
+  console.error(`Analyzing run ${runId}...`);
+  if (options.screenshots) {
+    console.error("(including screenshots for visual analysis)");
+  }
+  console.error("");
+
+  const client = new Anthropic();
+
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 4096,
+    system: `You are a UX analyst reviewing synthetic usability test runs. You analyze test logs, errors, and screenshots to provide actionable insights about website usability issues.
+
+Your analysis should:
+1. Identify the root cause of any failures
+2. Explain what the synthetic user experienced from their persona's perspective
+3. Highlight specific UX problems (confusing UI, missing feedback, broken flows, etc.)
+4. Suggest concrete improvements
+5. Note any concerning patterns (errors, slow responses, accessibility issues)
+
+Be specific and reference actual steps from the log. If screenshots are provided, describe what you see and how it relates to the issues.`,
+    messages: [
+      {
+        role: "user",
+        content: contentParts,
+      },
+    ],
+  });
+
+  const textContent = response.content.find((c) => c.type === "text");
+  if (textContent && textContent.type === "text") {
+    console.log(textContent.text);
+  }
+}
+
+program
+  .command("explain")
+  .description("Get Claude's analysis of why a run succeeded or failed")
+  .option("--run <id>", "Run ID to analyze")
+  .option("--latest", "Analyze the latest run", false)
+  .option("--screenshots", "Include screenshots in analysis (uses vision)", false)
+  .option("--question <text>", "Specific question to ask about the run")
+  .action((options: ExplainOptions) => {
+    explainRun(options).catch((error) => {
+      console.error("Explain failed:", error);
+      process.exit(1);
+    });
+  });
+
 program.parse();

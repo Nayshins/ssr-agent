@@ -163,6 +163,39 @@ npx tsx src/cli.ts report --latest
 npx tsx src/cli.ts report --run <run-id>
 ```
 
+### `explain`
+
+Get Claude's analysis of why a run succeeded or failed. This is useful for debugging failed runs and understanding UX issues.
+
+```bash
+npx tsx src/cli.ts explain --latest
+npx tsx src/cli.ts explain --run <run-id>
+```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `--run <id>` | Run ID to analyze |
+| `--latest` | Analyze the latest run |
+| `--screenshots` | Include screenshots in analysis (uses Claude's vision) |
+| `--question <text>` | Ask a specific question about the run |
+
+**Examples:**
+
+```bash
+# Analyze why the latest run failed
+npx tsx src/cli.ts explain --latest
+
+# Analyze with visual context from screenshots
+npx tsx src/cli.ts explain --latest --screenshots
+
+# Ask a specific question about a run
+npx tsx src/cli.ts explain --run <id> --question "Why did the user give up at checkout?"
+
+# Summarize UX issues across the run
+npx tsx src/cli.ts explain --latest --question "What are the top 3 UX issues this persona experienced?"
+```
+
 ## Output Artifacts
 
 Each run creates a directory in `runs/<timestamp>-<scenario>-<persona>/` containing:
